@@ -65,3 +65,8 @@ func Decode(buf []byte) (entry *Entry) {
 	entry.value = buf[16+int(entry.keySize) : 16+int(entry.keySize)+int(entry.valueSize)]
 	return
 }
+
+// IsValid Check if entry is valid
+func (e *Entry) IsValid() bool {
+	return e.crc == crc32.ChecksumIEEE(e.encodeWithoutCRC())
+}

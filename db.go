@@ -20,12 +20,12 @@ func (d *DB) Put(key, value []byte) error {
 
 // Delete a key from a Bitcask datastore.
 func (d *DB) Delete(key []byte) error {
-
+	return nil
 }
 
 // ListKeys List all keys in a Bitcask datastore.
 func (d *DB) ListKeys() [][]byte {
-
+	return nil
 }
 
 // Fold over all K/V pairs in a Bitcask datastore.

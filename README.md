@@ -6,7 +6,7 @@ simple kv store engine inspired by bitcask
 
 ## System Design
 1. DB启动时，系统内存储着`merged-data-file` 与 `hint-file`
-
+> hint-file 作为文件的header部分存放
 2. 系统通过读取`hint-file`一次性拉取索引文件到内存中
 
 ``hint-file``结构：`timestamp | key-size | value-size | value-pos | key`
@@ -16,7 +16,10 @@ simple kv store engine inspired by bitcask
 5. 当一个文件写满时，关闭此文件，创建新文件
 6. 后台线程将`old-file`合并到`merged-data-file`，重写`hint-file`
 7. 当数据库关闭时，强制merge，保证系统中存放着两份文件
-
+8. 每个文件分为`header`和`body`两部分，分别存放索引map与entry集合，给每个文件限定header大小，内存哈希索引定期dump到header中
+9. 如何合并`older-files`:遍历各个文件的索引map，去除墓碑记录，挑选最新的记录，通过磁盘直接定位seek获取entry，写入合并后的新文件，并得到新的内存索引map
+10. 每个文件开头设置标识位，如果已写满关闭的合法，因宕机未来的及归并的设置不合法
+11. 
 ## DataBase API Design
 ```go
 // Open database instance

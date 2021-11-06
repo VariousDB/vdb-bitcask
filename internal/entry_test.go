@@ -7,7 +7,7 @@ import (
 )
 
 func TestEntry_calcCheckSum(t *testing.T) {
-	entry := NewEntry([]byte("key"), []byte("value"))
+	entry := NewEntry([]byte("Key"), []byte("Value"))
 	fmt.Printf("%+v", entry)
 
 	buf := entry.Encode()

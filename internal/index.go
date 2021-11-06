@@ -3,14 +3,15 @@ package internal
 import (
 	"github.com/tiny-bitcask/utils"
 	"sync"
+	"time"
 )
 
 // Item is the index in memory
 type Item struct {
-	FileID    uint32
-	ValueSize uint32
-	ValuePos  uint32
-	TimeStamp uint32
+	FileID    int   // specify which file
+	ValueSize int64 // size of Value
+	ValuePos  int64 // pos of Value for seek
+	TimeStamp int64 // Timestamp
 }
 
 // KeyDir the index in memory
@@ -26,21 +27,28 @@ func NewKeyDir() *KeyDir {
 	}
 }
 
-func (k *KeyDir) Add(key []byte, fileID int) {
-	k.lock.Lock()
-	defer k.lock.Unlock()
-
-	keyStr := utils.Byte2Str(key)
-	k.index[keyStr] = Item{
-		FileID:    0,
-		ValueSize: 0,
-		ValuePos:  0,
-		TimeStamp: 0,
+// NewItem return new item
+func NewItem(fileID int, pos, size int64) Item {
+	return Item{
+		FileID:    fileID,
+		ValueSize: size,
+		ValuePos:  pos,
+		TimeStamp: time.Now().Unix(),
 	}
 }
 
-func (k *KeyDir) Get() {
+// Add idx to memory after write in disk
+func (k *KeyDir) Add(key []byte, item Item) {
+	k.lock.Lock()
+	defer k.lock.Unlock()
+	keyStr := utils.Byte2Str(key)
+	k.index[keyStr] = item
+}
 
+func (k *KeyDir) Get(key []byte) (Item, bool) {
+	keyStr := utils.Byte2Str(key)
+	item, ok := k.index[keyStr]
+	return item, ok
 }
 
 func (k *KeyDir) Delete() {

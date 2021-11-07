@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	bitcask "github.com/tiny-bitcask"
+	bitcask "github.com/zach030/tiny-bitcask"
 	"log"
 )
 

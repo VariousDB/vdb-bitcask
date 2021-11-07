@@ -3,7 +3,7 @@ package internal
 import (
 	"bytes"
 	"encoding/gob"
-	"github.com/tiny-bitcask/utils"
+	"github.com/zach030/tiny-bitcask/utils"
 	"io"
 	"sync"
 	"time"
@@ -48,14 +48,38 @@ func (k *KeyDir) Add(key []byte, item Item) {
 	k.index[keyStr] = item
 }
 
+// Get item in index
 func (k *KeyDir) Get(key []byte) (Item, bool) {
 	keyStr := utils.Byte2Str(key)
 	item, ok := k.index[keyStr]
 	return item, ok
 }
 
-func (k *KeyDir) Delete() {
+// Delete item in index
+func (k *KeyDir) Delete(key []byte) bool {
+	k.lock.Lock()
+	defer k.lock.Unlock()
+	keyStr := utils.Byte2Str(key)
+	_, ok := k.index[keyStr]
+	if !ok {
+		return ok
+	}
+	delete(k.index, keyStr)
+	return true
+}
 
+// Keys list all keys in index
+func (k *KeyDir) Keys() [][]byte {
+	keys := make([][]byte, 0)
+	for key, _ := range k.index {
+		keys = append(keys, utils.Str2Bytes(key))
+	}
+	return keys
+}
+
+// Index map in key-dir
+func (k *KeyDir) Index() map[string]Item {
+	return k.index
 }
 
 func (k *KeyDir) Encode() ([]byte, error) {

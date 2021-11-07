@@ -1,4 +1,4 @@
-module github.com/tiny-bitcask
+module github.com/zach030/tiny-bitcask
 
 go 1.17
 

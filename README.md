@@ -1,25 +1,23 @@
 # tiny-bitcask
-simple kv store engine inspired by bitcask
+Simple kv store engine inspired by bitcask
 
 ## Inspired By BitCask
 [BitCask](./doc/bitcask-intro.pdf)
 
 ## System Design
 1. DB启动时，系统内存储着`merged-data-file` 与 `hint-file`
-> hint-file 作为文件的header部分存放
+> 存档只保存两个文件：data-file（存数据），hint-file（存索引）
 2. 系统通过读取`hint-file`一次性拉取索引文件到内存中
 
-``hint-file``结构：`timestamp | key-size | value-size | value-pos | key`
+> ``hint-file``结构：`timestamp | key-size | value-size | value-pos | key`
 
-3. 再创建一个新的文件用于存放新写入的entry
-4. 写入entry时，先写磁盘再写内存哈希索引
-5. 当一个文件写满时，关闭此文件，创建新文件
-6. 后台线程将`old-file`合并到`merged-data-file`，重写`hint-file`
-7. 当数据库关闭时，强制merge，保证系统中存放着两份文件
-8. 每个文件分为`header`和`body`两部分，分别存放索引map与entry集合，给每个文件限定header大小，内存哈希索引定期dump到header中
-9. 如何合并`older-files`:遍历各个文件的索引map，去除墓碑记录，挑选最新的记录，通过磁盘直接定位seek获取entry，写入合并后的新文件，并得到新的内存索引map
-10. 每个文件开头设置标识位，如果已写满关闭的合法，因宕机未来的及归并的设置不合法
-11. 
+4. 初始化时创建一个active文件，用于存放新写入的kv对entry
+5. PUT接口：写入entry时，先写磁盘再写内存哈希索引
+6. 限定文件大小，当一个文件写满时，关闭此文件，创建新的活跃文件
+7. 后台线程定期将`old-file`合并到`merged-data-file`，将内存索引覆盖重写`hint-file`
+8. 当数据库关闭时，强制merge，保证系统中存放着两份文件（`bitcask.data` && `bitcask.hint`）
+10. 如何合并`older-files`:遍历索引map，去除墓碑记录，挑选最新的记录，通过磁盘直接定位seek获取entry，写入合并后的新文件，并得到新的内存索引map
+11. 每个文件开头设置标识位，如果已写满关闭的合法，因宕机未来的及归并的设置不合法
 ## DataBase API Design
 ```go
 // Open database instance
@@ -45,7 +43,7 @@ func (d *DB) Close() bool
 ```
 
 ## TODO-LIST
-- [ ] 完善内存哈希索引模块，在单个文件条件下测试 `GET/PUT` 接口
+- [x] 完善内存哈希索引模块，在单个文件条件下测试 `GET/PUT` 接口
 - [ ] 增加`mode`字段 用来区分entry的操作类型
 - [ ] 拓展多文件，实现`older`、`active file`的区别
 - [ ] 实现后台`merge`功能，生成`merged-data-file` 与 `hint-file`

@@ -44,12 +44,14 @@ func NewBkFile(path string, id int, active bool) (*BkFile, error) {
 	return bf, nil
 }
 
+// Read buf from files: older or active
 func (b *BkFile) Read(offset, size int64) (buf []byte, err error) {
 	buf = make([]byte, size)
 	_, err = b.rf.ReadAt(buf, offset)
 	return
 }
 
+// Write entry to active file
 func (b *BkFile) Write(entry *Entry) (pos int64) {
 	stat, err := b.wf.Stat()
 	if err != nil {
@@ -64,6 +66,16 @@ func (b *BkFile) Write(entry *Entry) (pos int64) {
 	return
 }
 
+// FileID get current file id
 func (b *BkFile) FileID() int {
 	return b.id
+}
+
+// Size get current file size, required when write
+func (b *BkFile) Size() (int64, error) {
+	stat, err := b.wf.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return stat.Size(), nil
 }

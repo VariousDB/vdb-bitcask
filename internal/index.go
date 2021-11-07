@@ -1,7 +1,10 @@
 package internal
 
 import (
+	"bytes"
+	"encoding/gob"
 	"github.com/tiny-bitcask/utils"
+	"io"
 	"sync"
 	"time"
 )
@@ -9,9 +12,9 @@ import (
 // Item is the index in memory
 type Item struct {
 	FileID    int   // specify which file
-	ValueSize int64 // size of Value
-	ValuePos  int64 // pos of Value for seek
-	TimeStamp int64 // Timestamp
+	ValueSize int64 // size of value
+	ValuePos  int64 // pos of value for seek
+	TimeStamp int64 // timestamp
 }
 
 // KeyDir the index in memory
@@ -28,11 +31,11 @@ func NewKeyDir() *KeyDir {
 }
 
 // NewItem return new item
-func NewItem(fileID int, pos, size int64) Item {
+func NewItem(fileID int, pos int64, entry *Entry) Item {
 	return Item{
 		FileID:    fileID,
-		ValueSize: size,
-		ValuePos:  pos,
+		ValueSize: entry.ValueSize(),
+		ValuePos:  pos + entry.ValueOffset(),
 		TimeStamp: time.Now().Unix(),
 	}
 }
@@ -53,4 +56,33 @@ func (k *KeyDir) Get(key []byte) (Item, bool) {
 
 func (k *KeyDir) Delete() {
 
+}
+
+func (k *KeyDir) Encode() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(k.index)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// Write2Hint save key-dirs hash index to hint-file
+func (k *KeyDir) Write2Hint(w io.Writer) (err error) {
+	buf, err := k.Encode()
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(buf)
+	if err != nil {
+		return
+	}
+	return
+}
+
+// ReloadFromHint load key-dirs index from file
+func (k *KeyDir) ReloadFromHint(r io.Reader) error {
+	dec := gob.NewDecoder(r)
+	return dec.Decode(&k.index)
 }

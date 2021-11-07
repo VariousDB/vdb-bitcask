@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	db, err := bitcask.Open("", nil)
+	db, err := bitcask.Open("data", nil)
 	if err != nil {
 		return
 	}
@@ -15,9 +15,9 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	val, err := db.Get([]byte("key"))
+	val, err := db.Get([]byte("key1"))
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Println("value is:", val)
+	fmt.Println("value is:", string(val))
 }

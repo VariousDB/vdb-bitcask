@@ -2,12 +2,19 @@ package bitcask
 
 import (
 	"errors"
+	"fmt"
 	"github.com/tiny-bitcask/internal"
 	"os"
+	"path/filepath"
 )
 
 var (
 	ErrSpecifyKeyNotExist = errors.New("specify key not exist")
+)
+
+const (
+	ArchivedDataFileExt = ".data"
+	ArchivedHintFileExt = ".hint"
 )
 
 type DB struct {
@@ -22,10 +29,36 @@ func Open(path string, cfg *Config) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DB{
+	db := &DB{
 		path: path,
 		idx:  internal.NewKeyDir(),
-	}, nil
+	}
+	err = db.rebuild()
+	if err != nil {
+		return nil, err
+	}
+	f, err := internal.NewBkFile(path, 1, true)
+	if err != nil {
+		return nil, err
+	}
+	db.activeFile = f
+	return db, nil
+}
+
+// rebuild load from .hint file
+func (d *DB) rebuild() error {
+	fns, err := filepath.Glob(fmt.Sprintf("%s/*.hint", d.path))
+	if err != nil {
+		return err
+	}
+	if len(fns) == 0 {
+		return nil
+	}
+	hintFile, err := os.Open(fns[0])
+	if err != nil && err != os.ErrNotExist {
+		return err
+	}
+	return d.idx.ReloadFromHint(hintFile)
 }
 
 // Get Retrieve a value by key from a Bitcask datastore.
@@ -55,9 +88,9 @@ func (d *DB) Get(key []byte) (val []byte, err error) {
 func (d *DB) Put(key, value []byte) error {
 	// 先写磁盘
 	entry := internal.NewEntry(key, value)
-	pos, size := d.activeFile.Write(entry)
+	pos := d.activeFile.Write(entry)
 	// 再加到索引
-	d.idx.Add(key, internal.NewItem(d.activeFile.FileID(), pos, size))
+	d.idx.Add(key, internal.NewItem(d.activeFile.FileID(), pos, entry))
 	return nil
 }
 

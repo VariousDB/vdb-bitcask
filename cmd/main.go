@@ -8,10 +8,11 @@ import (
 
 func main() {
 	db, err := bitcask.Open("data", nil)
+	defer db.Close()
 	if err != nil {
 		return
 	}
-	err = db.Put([]byte("key"), []byte("value"))
+	err = db.Put([]byte("key1"), []byte("value"))
 	if err != nil {
 		log.Fatalln(err)
 	}

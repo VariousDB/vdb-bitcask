@@ -79,3 +79,10 @@ func (b *BkFile) Size() (int64, error) {
 	}
 	return stat.Size(), nil
 }
+
+func (b *BkFile) Name() string {
+	if b.wf != nil {
+		return b.wf.Name()
+	}
+	return b.rf.Name()
+}

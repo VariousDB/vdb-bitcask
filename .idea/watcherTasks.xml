@@ -26,6 +26,7 @@
       </envs>
     </TaskOptions>
     <enabled-global>
+      <option value="goimports" />
       <option value="go fmt" />
     </enabled-global>
   </component>

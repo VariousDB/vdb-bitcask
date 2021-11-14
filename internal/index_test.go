@@ -2,14 +2,15 @@ package internal
 
 import (
 	"fmt"
-	"github.com/go-playground/assert/v2"
 	"os"
 	"testing"
+
+	"github.com/go-playground/assert/v2"
 )
 
 func TestKeyDir_Write2Hint(t *testing.T) {
 	kd := NewKeyDir()
-	hint, _ := os.OpenFile("0.hint", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	// hint, _ := os.OpenFile("data/index", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 	kd.Add([]byte("key1"), Item{
 		FileID:    1,
 		ValueSize: 20,
@@ -34,11 +35,11 @@ func TestKeyDir_Write2Hint(t *testing.T) {
 		ValuePos:  45,
 		TimeStamp: 1234567,
 	})
-	err := kd.Write2Hint(hint)
+	err := kd.SaveToHintFile("../data")
 	assert.Equal(t, err, nil)
 
 	newKd := NewKeyDir()
-	h, _ := os.Open("0.hint")
+	h, _ := os.Open("../data/index")
 	err = newKd.ReloadFromHint(h)
 	if err != nil {
 		t.Error(err)

@@ -45,24 +45,26 @@ func NewBkFile(path string, id int, active bool) (*BkFile, error) {
 }
 
 // Read buf from files: older or active
-func (b *BkFile) Read(offset, size int64) (buf []byte, err error) {
-	buf = make([]byte, size)
+func (b *BkFile) Read(offset int64, size int) (entry *Entry, err error) {
+	buf := make([]byte, size)
 	_, err = b.rf.ReadAt(buf, offset)
+	entry = Decode(buf)
 	return
 }
 
 // Write entry to active file
-func (b *BkFile) Write(entry *Entry) (pos int64) {
+func (b *BkFile) Write(entry *Entry) (offset int64, size int, err error) {
 	stat, err := b.wf.Stat()
 	if err != nil {
 		return
 	}
 	idx := stat.Size()
-	_, err = b.wf.WriteAt(entry.Encode(), idx)
+	n, err := b.wf.WriteAt(entry.Encode(), idx)
 	if err != nil {
 		return
 	}
-	pos = idx
+	size = n
+	offset = idx
 	return
 }
 
@@ -85,4 +87,27 @@ func (b *BkFile) Name() string {
 		return b.wf.Name()
 	}
 	return b.rf.Name()
+}
+
+func (b *BkFile) Close() error {
+	defer func() {
+		if b.rf != nil {
+			b.rf.Close()
+		}
+	}()
+	if b.wf == nil {
+		return nil
+	}
+	err := b.wf.Sync()
+	if err != nil {
+		return err
+	}
+	return b.wf.Close()
+}
+
+func (b *BkFile) Sync() error {
+	if b.wf == nil {
+		return nil
+	}
+	return b.wf.Sync()
 }

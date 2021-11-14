@@ -31,7 +31,7 @@ func NewEntry(key, value []byte) *Entry {
 		key:       key,
 		value:     value,
 	}
-	e.crc = crc32.ChecksumIEEE(e.encodeWithoutCRC())
+	e.crc = crc32.ChecksumIEEE(e.value)
 	return e
 }
 
@@ -70,6 +70,10 @@ func (e *Entry) ValueOffset() int64 {
 	return int64(EntryHeaderSize + len(e.key))
 }
 
+func (e *Entry) Value() []byte {
+	return e.value
+}
+
 func (e *Entry) ValueSize() int64 {
 	return int64(e.valueSize)
 }
@@ -80,5 +84,5 @@ func (e *Entry) Size() int64 {
 
 // IsValid Check if entry is valid
 func (e *Entry) IsValid() bool {
-	return e.crc == crc32.ChecksumIEEE(e.encodeWithoutCRC())
+	return e.crc == crc32.ChecksumIEEE(e.value)
 }

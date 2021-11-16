@@ -101,8 +101,8 @@ func (k *KeyDir) Encode() ([]byte, error) {
 // SaveToHintFile save key-dirs hash index to hint-file
 func (k *KeyDir) SaveToHintFile(path string) (err error) {
 	tmpExt := "index-tmp"
-	path = filepath.Join(path, tmpExt)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	tmpPath := filepath.Join(path, tmpExt)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func (k *KeyDir) SaveToHintFile(path string) (err error) {
 	if err = f.Sync(); err != nil {
 		return
 	}
-	if err = os.Rename(path, filepath.Join(path, "index")); err != nil {
+	if err = os.Rename(tmpPath, filepath.Join(path, "index")); err != nil {
 		return err
 	}
 	return

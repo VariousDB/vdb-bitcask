@@ -22,8 +22,6 @@ const (
 	ArchivedDataFile = "bitcask"
 	DataFileExt      = ".data"
 	IndexFile        = "index"
-
-	FirstActiveFile = 1
 )
 
 type BitCask struct {

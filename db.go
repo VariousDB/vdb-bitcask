@@ -198,52 +198,9 @@ func (b *BitCask) Fold(f func(key []byte) error) (err error) {
 // merge Merge several data files within a Bitcask datastore into a more compact form.
 // Also, produce hintfiles for faster startup.
 func (b *BitCask) merge() {
-	//dfs, err := filepath.Glob(fmt.Sprintf("%s/*.data", b.path))
-	//if err != nil {
-	//	return
-	//}
-	//if len(dfs) == 0 {
-	//	return
-	//}
-	//newDataFile, err := internal.NewBkFile(b.path, 0, true)
-	//if err != nil {
-	//	return
-	//}
-	//oldFiles := make([]*internal.BkFile, len(dfs))
-	//for i, name := range dfs {
-	//	name = strings.TrimPrefix(name, fmt.Sprintf("%s/", b.path))
-	//	id, err := strconv.Atoi(strings.TrimSuffix(name, DataFileExt))
-	//	if err != nil {
-	//		continue
-	//	}
-	//	f, err := internal.NewBkFile(b.path, id, false)
-	//	if err != nil {
-	//		continue
-	//	}
-	//	oldFiles[i] = f
-	//}
-	// sync index to hint file
-	//err = b.indexer.SaveToHintFile(b.hintFile)
-	//if err != nil {
-	//	return
-	//}
-	//newIdx := internal.NewKeyDir()
-	//for key, item := range b.indexer.Index() {
-	//	oldF := oldFiles[item.FileID]
-	//	val, err := oldF.Read(item.ValuePos, item.ValueSize)
-	//	if err != nil {
-	//		continue
-	//	}
-	//	entry := internal.NewEntry(utils.Str2Bytes(key), val)
-	//	offset := newDataFile.Write(entry)
-	//	newIdx.Add(utils.Str2Bytes(key), internal.NewItem())
-	//}
-	//os.Rename(newDataFile.Name(), ArchivedDataFile)
-	//for _, file := range oldFiles {
-	//	os.Remove(file.Name())
-	//}
-	////b.dataFile = newDataFile
-	//b.indexer = newIdx
+	// 将当前的所有datafiles进行关闭
+	// 创建一个新的file用于写操作
+	// 利用index，对所有关闭的datafiles进行遍历，写入到创建的临时db
 }
 
 // Sync Force any writes to sync to disk.

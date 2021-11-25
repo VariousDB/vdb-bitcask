@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	bitcask "github.com/zach030/tiny-bitcask"
 )
 
 // GetDataFiles 获取指定目录下所有的数据文件
@@ -19,13 +21,13 @@ func GetDataFiles(path string) ([]string, error) {
 	return fns, nil
 }
 
-// GetFileIDs 获取所有文件的id列表
-func GetFileIDs(files []string) ([]int, error) {
+// GetDataFileIDs 获取所有文件的id列表
+func GetDataFileIDs(files []string) ([]int, error) {
 	var fid []int
 	for _, fn := range files {
 		var ext string
 		fn = filepath.Base(fn)
-		if ext = filepath.Ext(fn); ext != ".data" {
+		if ext = filepath.Ext(fn); ext != bitcask.DataFileExt {
 			continue
 		}
 		id, err := strconv.Atoi(strings.TrimSuffix(fn, ext))

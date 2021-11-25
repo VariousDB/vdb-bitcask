@@ -11,29 +11,16 @@ import (
 	"github.com/zach030/tiny-bitcask/utils"
 )
 
-const (
-	ArchivedDataFile = "bitcask"
-	DataFileExt      = ".data"
-	IndexFile        = "index"
-)
-
 type BitCask struct {
-	path string
-	lock sync.RWMutex
-
-	indexer *internal.KeyDir
-	curr    *internal.BkFile
-
+	path      string
+	lock      sync.RWMutex
+	indexer   *internal.KeyDir
+	curr      *internal.BkFile
 	dataFiles map[int]*internal.BkFile
-
-	config *Config
-
-	//todo 存放当前冗余大小，需要落盘元数据存储
-	metadata *internal.MetaData
-	// 是否在合并
-	isMerging bool
-
-	needMerge chan struct{}
+	config    *Config
+	metadata  *internal.MetaData //todo 存放当前冗余大小，需要落盘元数据存储
+	isMerging bool               // 是否在合并
+	needMerge chan struct{}      // 是否需要合并，实时检测reclaim大小
 }
 
 // Open database
@@ -316,7 +303,7 @@ func loadDataFiles(path string) (map[int]*internal.BkFile, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	fids, err := utils.GetFileIDs(fns)
+	fids, err := utils.GetDataFileIDs(fns)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -387,7 +374,7 @@ func (b *BitCask) removeOldFiles(lastMergeFileID int, mergeDB *BitCask) error {
 		if f.IsDir() {
 			continue
 		}
-		fid, err := utils.GetFileIDs([]string{f.Name()})
+		fid, err := utils.GetDataFileIDs([]string{f.Name()})
 		if err != nil {
 			return err
 		}
@@ -414,7 +401,7 @@ func (b *BitCask) removeOldFiles(lastMergeFileID int, mergeDB *BitCask) error {
 
 func (b *BitCask) newTmpMergeDB(lastMergeFile int) (*BitCask, error) {
 	// 创建一个临时目录，用于存放合并的db
-	temp, err := ioutil.TempDir(b.path, "merge")
+	temp, err := ioutil.TempDir(b.path, MergeTmpFolder)
 	if err != nil {
 		return nil, err
 	}

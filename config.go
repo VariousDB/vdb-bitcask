@@ -5,7 +5,7 @@ var DefaultConfig = &Config{
 	MaxKeySize:      2 << 5,
 	MaxValueSize:    2 << 6,
 	Sync:            false,
-	MaxReclaimSpace: 1024,
+	MaxReclaimSpace: 2 << 6,
 }
 
 type Config struct {

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	bitcask "github.com/zach030/tiny-bitcask"
+
 	"github.com/zach030/tiny-bitcask/utils"
 )
 
@@ -109,8 +111,7 @@ func (k *KeyDir) Encode() ([]byte, error) {
 
 // SaveToHintFile save key-dirs hash index to hint-file
 func (k *KeyDir) SaveToHintFile(path string) (err error) {
-	tmpExt := "index-tmp"
-	tmpPath := filepath.Join(path, tmpExt)
+	tmpPath := filepath.Join(path, bitcask.IndexTmpName)
 	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
@@ -126,7 +127,7 @@ func (k *KeyDir) SaveToHintFile(path string) (err error) {
 	if err = f.Sync(); err != nil {
 		return
 	}
-	if err = os.Rename(tmpPath, filepath.Join(path, "index")); err != nil {
+	if err = os.Rename(tmpPath, filepath.Join(path, bitcask.IndexFile)); err != nil {
 		return err
 	}
 	return

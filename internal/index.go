@@ -60,6 +60,15 @@ func (k *KeyDir) Get(key []byte) (Item, bool) {
 	return item, ok
 }
 
+// Has item in index
+func (k *KeyDir) Has(key []byte) bool {
+	k.lock.RLock()
+	defer k.lock.RUnlock()
+	keyStr := utils.Byte2Str(key)
+	_, ok := k.index[keyStr]
+	return ok
+}
+
 // Delete item in index
 func (k *KeyDir) Delete(key []byte) {
 	k.lock.Lock()
@@ -73,12 +82,12 @@ func (k *KeyDir) Delete(key []byte) {
 }
 
 // Keys list all keys in index
-func (k *KeyDir) Keys() [][]byte {
+func (k *KeyDir) Keys() []string {
 	k.lock.RLock()
 	defer k.lock.RUnlock()
-	keys := make([][]byte, 0)
+	keys := make([]string, 0)
 	for key := range k.index {
-		keys = append(keys, utils.Str2Bytes(key))
+		keys = append(keys, key)
 	}
 	return keys
 }

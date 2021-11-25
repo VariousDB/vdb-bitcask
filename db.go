@@ -28,8 +28,12 @@ type BitCask struct {
 
 	config *Config
 
+	//todo 存放当前冗余大小，需要落盘元数据存储
+	metadata *internal.MetaData
 	// 是否在合并
 	isMerging bool
+
+	needMerge chan struct{}
 }
 
 // Open database
@@ -46,14 +50,31 @@ func Open(path string, options ...Option) (*BitCask, error) {
 		return nil, err
 	}
 	db := &BitCask{
-		path:   path,
-		config: cfg,
+		path:      path,
+		config:    cfg,
+		metadata:  &internal.MetaData{ReclaimSpace: 0},
+		needMerge: make(chan struct{}, 1),
 	}
 	err = db.rebuild()
 	if err != nil {
 		return nil, err
 	}
+	go db.stat()
 	return db, nil
+}
+
+func (b *BitCask) stat() {
+	for {
+		select {
+		case _, ok := <-b.needMerge:
+			if !ok {
+				return
+			}
+			if err := b.merge(); err != nil {
+				return
+			}
+		}
+	}
 }
 
 // rebuild load from bitcask.hint file to build index
@@ -117,9 +138,19 @@ func (b *BitCask) Put(key, value []byte) error {
 	if err != nil {
 		return err
 	}
+	b.reclaimDetect(key)
 	// 再加到索引
 	b.indexer.Add(key, internal.NewItem(b.curr.FileID(), pos, size))
 	return nil
+}
+
+func (b *BitCask) reclaimDetect(key []byte) {
+	if item, ok := b.indexer.Get(key); ok {
+		b.metadata.ReclaimSpace += int64(item.ValueSize + len(key))
+	}
+	if b.metadata.ReclaimSpace > b.config.MaxReclaimSpace {
+		go func() { b.needMerge <- struct{}{} }()
+	}
 }
 
 func (b *BitCask) validKV(key, value []byte) error {
@@ -167,13 +198,14 @@ func (b *BitCask) Delete(key []byte) error {
 	if err != nil {
 		return err
 	}
+	b.reclaimDetect(key)
 	// 内存索引中标记
 	b.indexer.Delete(key)
 	return nil
 }
 
 // ListKeys List all keys in a Bitcask datastore.
-func (b *BitCask) ListKeys() [][]byte {
+func (b *BitCask) ListKeys() []string {
 	return b.indexer.Keys()
 }
 
@@ -194,19 +226,12 @@ func (b *BitCask) Fold(f func(key []byte) error) (err error) {
 // merge Merge several data files within a Bitcask datastore into a more compact form.
 // Also, produce hintfiles for faster startup.
 func (b *BitCask) merge() error {
-	b.lock.Lock()
 	if b.isMerging {
-		b.lock.Unlock()
 		return ErrMergeInProgress
 	}
 	b.isMerging = true
-	b.lock.Unlock()
 	defer func() {
 		b.isMerging = false
-	}()
-	b.lock.RLock()
-	defer func() {
-		b.lock.RUnlock()
 	}()
 	// 将当前活跃文件关闭
 	err := b.closeActiveFile()
@@ -218,45 +243,28 @@ func (b *BitCask) merge() error {
 	for i := range b.dataFiles {
 		mergeFiles = append(mergeFiles, i)
 	}
-	// 将当前的所有datafiles进行关闭
+	sort.Ints(mergeFiles)
+	// 获取合并的文件中最后一个文件
+	lastMergeFile := mergeFiles[len(mergeFiles)-1]
 	// 创建一个新的file用于写操作
 	err = b.newActiveFile()
 	if err != nil {
 		return err
 	}
-	sort.Ints(mergeFiles)
-	lastMergeFile := mergeFiles[len(mergeFiles)-1]
-
-	temp, err := ioutil.TempDir(b.path, "merge")
+	mergeDB, err := b.newTmpMergeDB(lastMergeFile)
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(temp)
-	// 利用index，对所有关闭的datafiles进行遍历，写入到创建的临时db
-
-	mergeDB, err := Open(temp, WithConfig(b.config))
-	if err != nil {
-		return err
-	}
-	err = b.Fold(func(key []byte) error {
-		item, _ := b.indexer.Get(key)
-		if item.FileID > lastMergeFile {
-			return nil
-		}
-		val, err := b.Get(key)
-		if err != nil {
-			return err
-		}
-		err = mergeDB.Put(key, val)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	if err = mergeDB.Close(); err != nil {
-		return err
-	}
+	// todo 关闭当前 bitcask，不可写不可读
 	if err = b.Close(); err != nil {
+		return err
+	}
+	// 将旧的文件删除,将合并后的文件，改到当前db文件夹下
+	if err = b.removeOldFiles(lastMergeFile, mergeDB); err != nil {
+		return err
+	}
+	b.metadata.ReclaimSpace = 0
+	if err = b.rebuild(); err != nil {
 		return err
 	}
 	return nil
@@ -272,8 +280,7 @@ func (b *BitCask) Close() error {
 	// 保存内存索引文件
 	// 保存元数据、配置
 	// 将归档文件落盘
-	err := b.indexer.SaveToHintFile(b.path)
-	if err != nil {
+	if err := b.indexer.SaveToHintFile(b.path); err != nil {
 		return err
 	}
 	for _, file := range b.dataFiles {
@@ -281,7 +288,7 @@ func (b *BitCask) Close() error {
 			return err
 		}
 	}
-	if err = b.curr.Close(); err != nil {
+	if err := b.curr.Close(); err != nil {
 		return err
 	}
 	return nil
@@ -364,4 +371,71 @@ func (b *BitCask) newActiveFile() error {
 	}
 	b.curr = activef
 	return nil
+}
+
+// removeOldFiles 删除已经被merge的旧数据文件
+func (b *BitCask) removeOldFiles(lastMergeFileID int, mergeDB *BitCask) error {
+	// path内存放 旧数据文件+活跃文件+索引文件+临时db目录/合并后的文件+索引文件
+	fs, err := ioutil.ReadDir(b.path)
+	if err != nil {
+		return err
+	}
+	for _, f := range fs {
+		// 如果是目录文件，跳过
+		if f.IsDir() {
+			continue
+		}
+		fid, err := utils.GetFileIDs([]string{f.Name()})
+		if err != nil {
+			return err
+		}
+		// fid 就是[1]这样只存一个int的数组
+		// 如果是活跃文件，跳过
+		if len(fid) > 0 && fid[0] > lastMergeFileID {
+			continue
+		}
+		if err = os.Remove(filepath.Join(b.path, f.Name())); err != nil {
+			return err
+		}
+	}
+	mergedf, err := ioutil.ReadDir(mergeDB.path)
+	if err != nil {
+		return err
+	}
+	for _, file := range mergedf {
+		if err = os.Rename(filepath.Join(mergeDB.path, file.Name()), filepath.Join(b.path, file.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *BitCask) newTmpMergeDB(lastMergeFile int) (*BitCask, error) {
+	// 创建一个临时目录，用于存放合并的db
+	temp, err := ioutil.TempDir(b.path, "merge")
+	if err != nil {
+		return nil, err
+	}
+	mergeDB, err := Open(temp, WithConfig(b.config))
+	if err != nil {
+		return nil, err
+	}
+	defer mergeDB.Close()
+	err = b.Fold(func(key []byte) error {
+		// 如果是正在写入到新文件的数据，不参与合并
+		item, _ := b.indexer.Get(key)
+		if item.FileID > lastMergeFile {
+			return nil
+		}
+		val, err := b.Get(key)
+		if err != nil {
+			return err
+		}
+		err = mergeDB.Put(key, val)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return mergeDB, nil
 }

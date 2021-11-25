@@ -54,6 +54,7 @@ func Open(path string, options ...Option) (*BitCask, error) {
 		config:    cfg,
 		metadata:  &internal.MetaData{ReclaimSpace: 0},
 		needMerge: make(chan struct{}, 1),
+		isMerging: false,
 	}
 	err = db.rebuild()
 	if err != nil {
@@ -255,6 +256,7 @@ func (b *BitCask) merge() error {
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(mergeDB.path)
 	// todo 关闭当前 bitcask，不可写不可读
 	if err = b.Close(); err != nil {
 		return err

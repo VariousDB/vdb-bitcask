@@ -3,6 +3,7 @@ package bitcask
 import (
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,10 +23,15 @@ func TestAll(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("put", func(t *testing.T) {
+		err = db.Put([]byte("key"), []byte("value"))
+		assert.NoError(t, err)
+	})
+
 	t.Run("get", func(t *testing.T) {
 		val, err := db.Get([]byte("key"))
 		assert.NoError(t, err)
-		assert.Equal(t, []byte("value1"), val)
+		assert.Equal(t, []byte("value"), val)
 	})
 
 	t.Run("put", func(t *testing.T) {
@@ -39,11 +45,24 @@ func TestAll(t *testing.T) {
 		assert.Equal(t, []byte("value1"), val)
 	})
 
+	t.Run("batch put", func(t *testing.T) {
+		s := rand.Int()
+		e := rand.Intn(30)
+		for i := s; i < s+e; i++ {
+			err := db.Put([]byte(fmt.Sprintf("key%v", i)), []byte(fmt.Sprintf("squre value:%v", i*i)))
+			assert.Nil(t, err)
+		}
+	})
+
 	t.Run("list", func(t *testing.T) {
 		list := db.ListKeys()
-		for _, bytes := range list {
-			fmt.Println(string(bytes))
-		}
+		fmt.Println(list)
+	})
+
+	t.Run("merge", func(t *testing.T) {
+		err = db.merge()
+		assert.NoError(t, err)
+		assert.Equal(t, int64(0), db.metadata.ReclaimSpace)
 	})
 
 	t.Run("close", func(t *testing.T) {

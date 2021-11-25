@@ -1,21 +1,14 @@
 package bitcask
 
 import (
-	"errors"
+	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"github.com/zach030/tiny-bitcask/internal"
 	"github.com/zach030/tiny-bitcask/utils"
-)
-
-var (
-	ErrSpecifyKeyNotExist = errors.New("specify key not exist")
-	ErrEmptyKey           = errors.New("empty key")
-	ErrKeyTooLarge        = errors.New("key too large")
-	ErrValueTooLarge      = errors.New("value too large")
-	ErrInvalidCheckSum    = errors.New("invalid checksum")
 )
 
 const (
@@ -34,6 +27,9 @@ type BitCask struct {
 	dataFiles map[int]*internal.BkFile
 
 	config *Config
+
+	// 是否在合并
+	isMerging bool
 }
 
 // Open database
@@ -197,10 +193,73 @@ func (b *BitCask) Fold(f func(key []byte) error) (err error) {
 
 // merge Merge several data files within a Bitcask datastore into a more compact form.
 // Also, produce hintfiles for faster startup.
-func (b *BitCask) merge() {
+func (b *BitCask) merge() error {
+	b.lock.Lock()
+	if b.isMerging {
+		b.lock.Unlock()
+		return ErrMergeInProgress
+	}
+	b.isMerging = true
+	b.lock.Unlock()
+	defer func() {
+		b.isMerging = false
+	}()
+	b.lock.RLock()
+	defer func() {
+		b.lock.RUnlock()
+	}()
+	// 将当前活跃文件关闭
+	err := b.closeActiveFile()
+	if err != nil {
+		return err
+	}
+	// 整理所有待合并的文件列表
+	mergeFiles := make([]int, 0, len(b.dataFiles))
+	for i := range b.dataFiles {
+		mergeFiles = append(mergeFiles, i)
+	}
 	// 将当前的所有datafiles进行关闭
 	// 创建一个新的file用于写操作
+	err = b.newActiveFile()
+	if err != nil {
+		return err
+	}
+	sort.Ints(mergeFiles)
+	lastMergeFile := mergeFiles[len(mergeFiles)-1]
+
+	temp, err := ioutil.TempDir(b.path, "merge")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(temp)
 	// 利用index，对所有关闭的datafiles进行遍历，写入到创建的临时db
+
+	mergeDB, err := Open(temp, WithConfig(b.config))
+	if err != nil {
+		return err
+	}
+	err = b.Fold(func(key []byte) error {
+		item, _ := b.indexer.Get(key)
+		if item.FileID > lastMergeFile {
+			return nil
+		}
+		val, err := b.Get(key)
+		if err != nil {
+			return err
+		}
+		err = mergeDB.Put(key, val)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err = mergeDB.Close(); err != nil {
+		return err
+	}
+	if err = b.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Sync Force any writes to sync to disk.
@@ -281,4 +340,28 @@ func loadIndexes(path string) (*internal.KeyDir, error) {
 		return idx, err
 	}
 	return idx, nil
+}
+
+// closeActiveFile 将当前活跃的文件关闭并加入旧文件列表
+func (b *BitCask) closeActiveFile() error {
+	if err := b.curr.Close(); err != nil {
+		return err
+	}
+	id := b.curr.FileID()
+	oldf, err := internal.NewBkFile(b.path, id, false)
+	if err != nil {
+		return err
+	}
+	b.dataFiles[id] = oldf
+	return nil
+}
+
+// newActiveFile 打开一个新的活跃文件
+func (b *BitCask) newActiveFile() error {
+	activef, err := internal.NewBkFile(b.path, b.curr.FileID()+1, true)
+	if err != nil {
+		return err
+	}
+	b.curr = activef
+	return nil
 }

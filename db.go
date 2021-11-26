@@ -8,15 +8,19 @@ import (
 	"sync"
 
 	"github.com/zach030/tiny-bitcask/internal"
+	df "github.com/zach030/tiny-bitcask/internal/datafile"
+	"github.com/zach030/tiny-bitcask/internal/index"
+	idx "github.com/zach030/tiny-bitcask/internal/index"
 	"github.com/zach030/tiny-bitcask/utils"
 )
 
 type BitCask struct {
 	path      string
 	lock      sync.RWMutex
-	indexer   *internal.KeyDir
-	curr      *internal.BkFile
-	dataFiles map[int]*internal.BkFile
+	indexer   idx.Index
+	curr      df.DataFile
+	dataFiles map[int]df.DataFile
+	options   []Option
 	config    *Config
 	metadata  *internal.MetaData //todo 存放当前冗余大小，需要落盘元数据存储
 	isMerging bool               // 是否在合并
@@ -25,7 +29,6 @@ type BitCask struct {
 
 // Open database
 func Open(path string, options ...Option) (*BitCask, error) {
-	//todo 指定配置文件路径
 	var cfg = DefaultConfig
 	for _, option := range options {
 		if err := option(cfg); err != nil {
@@ -39,6 +42,7 @@ func Open(path string, options ...Option) (*BitCask, error) {
 	db := &BitCask{
 		path:      path,
 		config:    cfg,
+		options:   options,
 		metadata:  &internal.MetaData{ReclaimSpace: 0},
 		needMerge: make(chan struct{}, 1),
 		isMerging: false,
@@ -65,7 +69,7 @@ func (b *BitCask) stat() {
 	}
 }
 
-// rebuild load from bitcask.hint file to build index
+// rebuild load from bitcask.hint datafile to build index
 func (b *BitCask) rebuild() (err error) {
 	dfs, last, err := loadDataFiles(b.path)
 	if err != nil {
@@ -75,7 +79,7 @@ func (b *BitCask) rebuild() (err error) {
 	if err != nil {
 		return
 	}
-	curr, err := internal.NewBkFile(b.path, last, true)
+	curr, err := df.NewBkFile(b.path, last, true)
 	if err != nil {
 		return
 	}
@@ -107,6 +111,7 @@ func (b *BitCask) Get(key []byte) ([]byte, error) {
 	return e.Value(), nil
 }
 
+// Has if the key is existed
 func (b *BitCask) Has(key []byte) bool {
 	b.lock.RLock()
 	defer b.lock.RUnlock()
@@ -114,7 +119,7 @@ func (b *BitCask) Has(key []byte) bool {
 	return ok
 }
 
-// Put Store a key and value in a Bitcask datastore.
+// Put Store a key and value in a BitCask datastore.
 func (b *BitCask) Put(key, value []byte) error {
 	err := b.validKV(key, value)
 	if err != nil {
@@ -128,7 +133,7 @@ func (b *BitCask) Put(key, value []byte) error {
 	}
 	b.reclaimDetect(key)
 	// 再加到索引
-	b.indexer.Add(key, internal.NewItem(b.curr.FileID(), pos, size))
+	b.indexer.Add(key, index.NewItem(b.curr.FileID(), pos, size))
 	return nil
 }
 
@@ -162,12 +167,12 @@ func (b *BitCask) put(key, value []byte) (offset int64, size int, err error) {
 			return 0, 0, err
 		}
 		id := b.curr.FileID()
-		oldDf, err := internal.NewBkFile(b.path, id, false)
+		oldDf, err := df.NewBkFile(b.path, id, false)
 		if err != nil {
 			return 0, 0, err
 		}
 		b.dataFiles[id] = oldDf
-		newDf, err := internal.NewBkFile(b.path, id+1, true)
+		newDf, err := df.NewBkFile(b.path, id+1, true)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -269,7 +274,7 @@ func (b *BitCask) Close() error {
 	// 保存内存索引文件
 	// 保存元数据、配置
 	// 将归档文件落盘
-	if err := b.indexer.SaveToHintFile(b.path); err != nil {
+	if err := b.indexer.Sync(b.path); err != nil {
 		return err
 	}
 	for _, file := range b.dataFiles {
@@ -283,22 +288,19 @@ func (b *BitCask) Close() error {
 	return nil
 }
 
-// isInActiveFile is query entry exist in active file
+// isInActiveFile is query entry exist in active datafile
 func (b *BitCask) isInActiveFile(id int) bool {
 	return b.curr.FileID() == id
 }
 
-// isActiveFileExceedLimit is the size of active file exceed limit
+// isActiveFileExceedLimit is the size of active datafile exceed limit
 func (b *BitCask) isActiveFileExceedLimit() bool {
-	size, err := b.curr.Size()
-	if err != nil {
-		return true
-	}
+	size := b.curr.Size()
 	return size >= b.config.MaxFileSize
 }
 
 // loadDataFiles 查找指定目录，读取所有已经记录的文件
-func loadDataFiles(path string) (map[int]*internal.BkFile, int, error) {
+func loadDataFiles(path string) (map[int]df.DataFile, int, error) {
 	fns, err := utils.GetDataFiles(path)
 	if err != nil {
 		return nil, 0, err
@@ -311,9 +313,9 @@ func loadDataFiles(path string) (map[int]*internal.BkFile, int, error) {
 	if len(fids) > 0 {
 		last = fids[len(fids)-1]
 	}
-	datafiles := make(map[int]*internal.BkFile, len(fids))
+	datafiles := make(map[int]df.DataFile, len(fids))
 	for _, fid := range fids {
-		datafiles[fid], err = internal.NewBkFile(path, fid, false)
+		datafiles[fid], err = df.NewBkFile(path, fid, false)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -321,21 +323,21 @@ func loadDataFiles(path string) (map[int]*internal.BkFile, int, error) {
 	return datafiles, last, nil
 }
 
-func loadIndexes(path string) (*internal.KeyDir, error) {
-	idx := internal.NewKeyDir()
+func loadIndexes(path string) (idx.Index, error) {
+	newIndex := index.NewKeyDir()
 	path = filepath.Join(path, IndexFile)
 	if !utils.Exist(path) {
-		return idx, nil
+		return newIndex, nil
 	}
 	hintf, err := os.Open(path)
 	if err != nil {
-		return idx, err
+		return newIndex, err
 	}
-	err = idx.ReloadFromHint(hintf)
+	err = newIndex.Load(hintf)
 	if err != nil {
-		return idx, err
+		return newIndex, err
 	}
-	return idx, nil
+	return newIndex, nil
 }
 
 // closeActiveFile 将当前活跃的文件关闭并加入旧文件列表
@@ -344,7 +346,7 @@ func (b *BitCask) closeActiveFile() error {
 		return err
 	}
 	id := b.curr.FileID()
-	oldf, err := internal.NewBkFile(b.path, id, false)
+	oldf, err := df.NewBkFile(b.path, id, false)
 	if err != nil {
 		return err
 	}
@@ -354,7 +356,7 @@ func (b *BitCask) closeActiveFile() error {
 
 // newActiveFile 打开一个新的活跃文件
 func (b *BitCask) newActiveFile() error {
-	activef, err := internal.NewBkFile(b.path, b.curr.FileID()+1, true)
+	activef, err := df.NewBkFile(b.path, b.curr.FileID()+1, true)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package internal
+package index
 
 import (
 	"bytes"
@@ -9,35 +9,38 @@ import (
 	"sync"
 	"time"
 
-	bitcask "github.com/zach030/tiny-bitcask"
-
+	"github.com/zach030/tiny-bitcask/internal"
 	"github.com/zach030/tiny-bitcask/utils"
 )
 
-// Item is the index in memory
-type Item struct {
-	FileID    int   // specify which file
-	ValueSize int   // size of value
-	ValuePos  int64 // pos of value for seek
-	TimeStamp int64 // timestamp
+type Index interface {
+	Add([]byte, internal.Item)
+	Get([]byte) (internal.Item, bool)
+	Has([]byte) bool
+	Delete([]byte)
+	Keys() []string
+	Encode() ([]byte, error)
+	Sync(string) error
+	Load(io.Reader) error
+	Index() map[string]internal.Item
 }
 
 // KeyDir the index in memory
 type KeyDir struct {
-	lock  sync.RWMutex
-	index map[string]Item
+	sync.RWMutex
+	index map[string]internal.Item
 }
 
 // NewKeyDir returns memory index
-func NewKeyDir() *KeyDir {
+func NewKeyDir() Index {
 	return &KeyDir{
-		index: make(map[string]Item),
+		index: make(map[string]internal.Item),
 	}
 }
 
 // NewItem return new item
-func NewItem(fileID int, offset int64, size int) Item {
-	return Item{
+func NewItem(fileID int, offset int64, size int) internal.Item {
+	return internal.Item{
 		FileID:    fileID,
 		ValueSize: size,
 		ValuePos:  offset,
@@ -46,17 +49,17 @@ func NewItem(fileID int, offset int64, size int) Item {
 }
 
 // Add idx to memory after write in disk
-func (k *KeyDir) Add(key []byte, item Item) {
-	k.lock.Lock()
-	defer k.lock.Unlock()
+func (k *KeyDir) Add(key []byte, item internal.Item) {
+	k.Lock()
+	defer k.Unlock()
 	keyStr := utils.Byte2Str(key)
 	k.index[keyStr] = item
 }
 
 // Get item in index
-func (k *KeyDir) Get(key []byte) (Item, bool) {
-	k.lock.RLock()
-	defer k.lock.RUnlock()
+func (k *KeyDir) Get(key []byte) (internal.Item, bool) {
+	k.RLock()
+	defer k.RUnlock()
 	keyStr := utils.Byte2Str(key)
 	item, ok := k.index[keyStr]
 	return item, ok
@@ -64,8 +67,8 @@ func (k *KeyDir) Get(key []byte) (Item, bool) {
 
 // Has item in index
 func (k *KeyDir) Has(key []byte) bool {
-	k.lock.RLock()
-	defer k.lock.RUnlock()
+	k.RLock()
+	defer k.RUnlock()
 	keyStr := utils.Byte2Str(key)
 	_, ok := k.index[keyStr]
 	return ok
@@ -73,8 +76,8 @@ func (k *KeyDir) Has(key []byte) bool {
 
 // Delete item in index
 func (k *KeyDir) Delete(key []byte) {
-	k.lock.Lock()
-	defer k.lock.Unlock()
+	k.Lock()
+	defer k.Unlock()
 	keyStr := utils.Byte2Str(key)
 	_, ok := k.index[keyStr]
 	if !ok {
@@ -85,8 +88,8 @@ func (k *KeyDir) Delete(key []byte) {
 
 // Keys list all keys in index
 func (k *KeyDir) Keys() []string {
-	k.lock.RLock()
-	defer k.lock.RUnlock()
+	k.RLock()
+	defer k.RUnlock()
 	keys := make([]string, 0)
 	for key := range k.index {
 		keys = append(keys, key)
@@ -95,8 +98,14 @@ func (k *KeyDir) Keys() []string {
 }
 
 // Index map in key-dir
-func (k *KeyDir) Index() map[string]Item {
-	return k.index
+func (k *KeyDir) Index() map[string]internal.Item {
+	k.RLock()
+	defer k.RUnlock()
+	idx := make(map[string]internal.Item)
+	for key, item := range k.index {
+		idx[key] = item
+	}
+	return idx
 }
 
 func (k *KeyDir) Encode() ([]byte, error) {
@@ -109,9 +118,9 @@ func (k *KeyDir) Encode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// SaveToHintFile save key-dirs hash index to hint-file
-func (k *KeyDir) SaveToHintFile(path string) (err error) {
-	tmpPath := filepath.Join(path, bitcask.IndexTmpName)
+// Sync save key-dirs hash index to hint-datafile
+func (k *KeyDir) Sync(path string) (err error) {
+	tmpPath := filepath.Join(path, "index-temp")
 	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
@@ -127,14 +136,14 @@ func (k *KeyDir) SaveToHintFile(path string) (err error) {
 	if err = f.Sync(); err != nil {
 		return
 	}
-	if err = os.Rename(tmpPath, filepath.Join(path, bitcask.IndexFile)); err != nil {
+	if err = os.Rename(tmpPath, filepath.Join(path, "index")); err != nil {
 		return err
 	}
 	return
 }
 
-// ReloadFromHint load key-dirs index from file
-func (k *KeyDir) ReloadFromHint(r io.Reader) error {
+// Load key-dirs index from datafile
+func (k *KeyDir) Load(r io.Reader) error {
 	dec := gob.NewDecoder(r)
 	return dec.Decode(&k.index)
 }

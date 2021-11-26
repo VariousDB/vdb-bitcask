@@ -66,20 +66,8 @@ func Decode(buf []byte) (entry *Entry) {
 	return
 }
 
-func (e *Entry) ValueOffset() int64 {
-	return int64(EntryHeaderSize + len(e.key))
-}
-
 func (e *Entry) Value() []byte {
 	return e.value
-}
-
-func (e *Entry) ValueSize() int64 {
-	return int64(e.valueSize)
-}
-
-func (e *Entry) Size() int64 {
-	return int64(EntryHeaderSize + len(e.key) + len(e.value))
 }
 
 // IsValid Check if entry is valid

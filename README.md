@@ -44,6 +44,7 @@ func (d *DB) Close() bool
 
 ## TODO-LIST
 - [x] 完善内存哈希索引模块，在单个文件条件下测试 `GET/PUT` 接口
-- [ ] 增加`mode`字段 用来区分entry的操作类型
-- [ ] 拓展多文件，实现`older`、`active file`的区别
-- [ ] 实现后台`merge`功能，生成`merged-data-file` 与 `hint-file`
+- [x] 增加`mode`字段 用来区分entry的操作类型
+- [x] 拓展多文件，实现`older`、`active file`的区别
+- [x] 实现后台`merge`功能，生成`merged-data-file` 与 `hint-file`
+- [ ] 支持key过期

@@ -39,7 +39,7 @@ func TestAll(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("get", func(t *testing.T) {
+	t.Run("get-exist", func(t *testing.T) {
 		val, err := db.Get([]byte("key1"))
 		assert.NoError(t, err)
 		assert.Equal(t, []byte("value1"), val)

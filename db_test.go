@@ -54,7 +54,7 @@ func TestAll(t *testing.T) {
 		}
 	})
 
-	t.Run("list", func(t *testing.T) {
+	t.Run("list-test", func(t *testing.T) {
 		list := db.ListKeys()
 		fmt.Println(list)
 	})
